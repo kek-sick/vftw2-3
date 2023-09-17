@@ -1,0 +1,32 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"name": "vftw2-3_tube_test",
+			"path": "../../../code_tube_test/vftw2-3_tube_test"
+		},
+		{
+			"name": "230701-012436-spl-blink",
+			"path": "../../../../../PlatformIO/Projects/230701-012436-spl-blink"
+		}
+	],
+	"settings": {
+		"git.ignoreLimitWarning": true,
+		"files.associations": {
+			"stm8s_i2c.h": "c",
+			"stm8s_spi.h": "c",
+			"stm8s_it.h": "c",
+			"stm8s.h": "c",
+			"stm8s_adc1.h": "c",
+			"stm8s_clk.h": "c",
+			"stm8s_awu.h": "c",
+			"stm8s_itc.h": "c",
+			"stm8s_tim2.h": "c",
+			"stm8s_exti.h": "c",
+			"stm8s_flash.h": "c"
+		},
+		"editor.fontSize": 16
+	}
+}

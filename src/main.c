@@ -930,7 +930,7 @@ void main(void)
         if (step_to_show >= 10000)
         {
           lamp_L_symb_num = step_to_show / 10000;
-          lamp_R_symb_num = step_to_show / 1000;
+          lamp_R_symb_num = step_to_show % 10000 / 1000;
           if (show_today_step)
           {
             seg_dot_on_lamp = 0;
@@ -943,7 +943,7 @@ void main(void)
         }else
         {
           lamp_L_symb_num = step_to_show / 1000;
-          lamp_R_symb_num = step_to_show / 100;
+          lamp_R_symb_num = step_to_show % 1000 / 100;
           if (show_today_step)
           {
             seg_dot_on_lamp = 1;
@@ -1125,7 +1125,7 @@ INTERRUPT_HANDLER(AWU_IRQHandler, 1)
     if (!step_delay)
     {
       step_delay--;
-    }else if (X_acc[0] - X_acc[4] /*+ (Y_acc[4] - Y_acc[0])*/ > 17)
+    }else if ((X_acc[0] - X_acc[4]) + (Y_acc[4] - Y_acc[0]) > 17)
     {
       step_delay = STEP_DELAY;
       step_counter_this_day++;
@@ -1382,7 +1382,7 @@ void get_time(){
 uint8_t old_day = day;
   #if RTC >= 1
 
-  I2C_Read_three_more_byte(RTC_ADDR, 4, RxBuffer, 0);
+  I2C_Read_three_more_byte(RTC_ADDR, 5, RxBuffer, 0);
   seconds = RxBuffer[1] & 0x0F;
   ten_seconds = (RxBuffer[1] >> 4) & 0x07;
   minutes = RxBuffer[2] & 0x0F;
@@ -1394,7 +1394,7 @@ uint8_t old_day = day;
   
   #else
 
-  I2C_Read_three_more_byte(RTC_ADDR, 3, RxBuffer, 0);
+  I2C_Read_three_more_byte(RTC_ADDR, 4, RxBuffer, 0);
   seconds = RxBuffer[0] & 0x0F;
   ten_seconds = (RxBuffer[0] >> 4) & 0x07;
   minutes = RxBuffer[1] & 0x0F;
@@ -1494,7 +1494,7 @@ void show_open_animation(uint8_t animation){
     {//in
       animation_frame_l |= seg_order_for_random_reserved[i];
       animation_frame_r |= seg_order_for_random_reserved[i];
-      Delay_ms(50);
+      Delay_ms(40);
     }
     for (uint8_t i = 0; i < 9; i++)
     {//out
@@ -1508,7 +1508,7 @@ void show_open_animation(uint8_t animation){
         animation_frame_l &= (temp | alphabet_iv3_l[18]);    //A
         animation_frame_r &= (temp | alphabet_iv3_r[15]);    //bat 2
       }
-      Delay_ms(50);
+      Delay_ms(40);
     }
   }
   if (Animation == 1)

@@ -731,12 +731,12 @@ void main(void)
         lamp_R_symb_num = 16;
         low_bat_indication_blink = FALSE;
       }
-      if (bat_voltage > 5501 & bat_voltage <= 6050)
+      if (bat_voltage > 5501 & bat_voltage <= 5950)
       {
         lamp_R_symb_num = 15;
         low_bat_indication_blink = FALSE;
       }
-      if (bat_voltage > 6051)
+      if (bat_voltage > 5951)
       {
         lamp_R_symb_num = 14;
         low_bat_indication_blink = FALSE;
@@ -930,7 +930,7 @@ void main(void)
         if (step_to_show >= 10000)
         {
           lamp_L_symb_num = step_to_show / 10000;
-          lamp_R_symb_num = step_to_show % 10000 / 1000;
+          lamp_R_symb_num = (step_to_show % 10000) / 1000;
           if (show_today_step)
           {
             seg_dot_on_lamp = 0;
@@ -943,7 +943,7 @@ void main(void)
         }else
         {
           lamp_L_symb_num = step_to_show / 1000;
-          lamp_R_symb_num = step_to_show % 1000 / 100;
+          lamp_R_symb_num = (step_to_show % 1000) / 100;
           if (show_today_step)
           {
             seg_dot_on_lamp = 1;
@@ -1102,11 +1102,10 @@ INTERRUPT_HANDLER(AWU_IRQHandler, 1)
   I2C_Cmd(DISABLE);
   int8_t Y_local_min = 0;
   int8_t Y_local_max = 0;
-  
 
   up_down_transition = up_down_transition >> 1;
   down_up_transition = down_up_transition >> 1;
-  for (uint8_t i = 0; i < 8; i++)
+  for (int8_t i = 7; i > -1; i--)
   {
     X_acc[i+1] = X_acc[i];
     Y_acc[i+1] = Y_acc[i];
@@ -1122,10 +1121,10 @@ INTERRUPT_HANDLER(AWU_IRQHandler, 1)
 
   if (enable_step_counter)
   {
-    if (!step_delay)
+    if (step_delay)
     {
       step_delay--;
-    }else if ((X_acc[0] - X_acc[4]) + (Y_acc[4] - Y_acc[0]) > 17)
+    }else if ((X_acc[0] - X_acc[4]) /*+ (Y_acc[4] - Y_acc[0])*/ > 15)
     {
       step_delay = STEP_DELAY;
       step_counter_this_day++;
@@ -1174,8 +1173,6 @@ INTERRUPT_HANDLER(AWU_IRQHandler, 1)
         // }
       } 
     }
-    
-    
     
     // if (arm_rotate_threshold_passed && (Y_local_max - Y_local_min >= 50))
     // {
@@ -1435,11 +1432,11 @@ void set_time(){
   TxBuffer[2] = seconds |= (ten_seconds << 4);
   TxBuffer[3] = minutes |= (ten_minutes << 4);
   TxBuffer[4] = hours |= (ten_hours << 4);
-  TxBuffer[5] = 0;
-  TxBuffer[6] = 0;
-  TxBuffer[7] = 0;
-  TxBuffer[8] = 0;
-  I2C_Send_data(RTC_ADDR, 9, TxBuffer);
+  // TxBuffer[5] = 0;
+  // TxBuffer[6] = 0;
+  // TxBuffer[7] = 0;
+  // TxBuffer[8] = 0;
+  I2C_Send_data(RTC_ADDR, 5, TxBuffer);
 
   #else
 
@@ -1447,10 +1444,10 @@ void set_time(){
   TxBuffer[1] = seconds |= (ten_seconds << 4);
   TxBuffer[2] = minutes |= (ten_minutes << 4);
   TxBuffer[3] = hours |= (ten_hours << 4);
-  TxBuffer[4] = 0;
-  TxBuffer[5] = 0;
-  TxBuffer[6] = 0;
-  I2C_Send_data(RTC_ADDR, 7, TxBuffer);
+  // TxBuffer[4] = 0;
+  // TxBuffer[5] = 0;
+  // TxBuffer[6] = 0;
+  I2C_Send_data(RTC_ADDR, 4, TxBuffer);
 
   #endif
 }
@@ -1467,7 +1464,6 @@ void show_open_animation(uint8_t animation){
       animation_frame_l = alphabet_iv3_l[18];    //A
       animation_frame_r = alphabet_iv3_r[15];    //bat 2
     }
-    
     
     uint8_t temp_brightness = brightness;
     brightness = 1;

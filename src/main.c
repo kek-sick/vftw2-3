@@ -63,11 +63,13 @@
 #define SENS_BTN_PORT (GPIOD)
 //#define ACCELEROMETR_ADDR0 0x30
 #define Animations_amount 3
+#define BOOT_COUNTER_EEPROM_ADDR 0x04004
 #define BRIGHTNESS_EEPROM_ADDR 0x04003
 #define PERIOD_EEPROM_ADDR 0x04002
 #define ANIMATION_EEPROM_ADDR 0x04001
 #define BOOL_EEPROM_ADDR 0x04000
 #define STEP_DELAY 4
+#define BOOT_COUNTER_ENABLE 1
 #define CALIBRATION_MODE 0
 #define RTC_CALIBER_VALUE 0x00
 #define RTC 2 // 0 M41T00; 1 - M41T81; 2 - M41T81S;
@@ -161,7 +163,8 @@ uint8_t Animation = ANIMATION;        // TO EEPROM byte
 uint16_t Time_showing_duration = TIME_SHOWING_DURATION;
 uint8_t time_showing_duration_level;  // 2000 1400 1000 700 500 400 300 // TO EEPROM byte
 uint8_t brightness = Brightness;      // TO EEPROM byte
-uint8_t brightness_level;     // 1 2 4 8 16 32 64 128 255
+uint8_t brightness_level;             // 1 2 4 8 16 32 64 128 255
+uint8_t boot_counter;                 // TO EEPROM byte
 
 volatile uint16_t seg_dot = 0b0000000001000000;
 uint16_t alphabet_iv3_l[] = {
@@ -178,7 +181,7 @@ uint16_t alphabet_iv3_l[] = {
   0b0111111101111000,   //  full  10
   0b0000000000001000,   //  none  11
   0b0011100100101000,   //  H     12
-  0b0111101000001000,   //  E     13
+  0b0011101100001000,   //  Р     13
   0b0111111000101000,   //  B     14
   0b0001101100111000,   //  Я     15
   0b0111001000001000,   //  C     16
@@ -340,6 +343,22 @@ void main(void)
   AWU_Init(AWU_TIMEBASE_64MS);
 
   enableInterrupts();
+
+
+  #if BOOT_COUNTER_ENABLE == 1
+  boot_counter = *(PointerAttr uint8_t *) (MemoryAddressCast)BOOT_COUNTER_EEPROM_ADDR;
+  boot_counter++;
+  /* Unlock data memory */
+    FLASH->DUKR = 0xAE; 
+    FLASH->DUKR = 0x56;
+
+  // check protection off
+  while (!(FLASH->IAPSR & FLASH_IAPSR_DUL));
+  *(PointerAttr uint8_t*) (uint16_t)0x4004 = boot_counter;
+  /* Lock memory */
+  FLASH->IAPSR &= (uint8_t)0xF7;  /*!< Data EEPROM memory */;
+  
+  #endif
 
 
   TxBuffer[0] = 0x0C; //halt bit regester address
@@ -878,7 +897,7 @@ void main(void)
         {
           error_register &= ~i;  //removing error
           //errno = 2; 
-          errors_count++;
+          //errors_count++;
         } 
         if (errno)
         {
@@ -1642,11 +1661,11 @@ void show_error(uint8_t error){
   for (uint8_t j = 0; j < 4; j++)
   {
     lamp_L_symb_num = 13;
-    lamp_R_symb_num = error;
+    lamp_R_symb_num = 6;
     if (error == 2)
     {
-      lamp_L_symb_num = errors_count / 10;
-      lamp_R_symb_num = errors_count % 10;//&0x0F;
+      lamp_L_symb_num = boot_counter / 10;
+      lamp_R_symb_num = boot_counter % 10;//&0x0F;
     }
     Delay_ms(200);
     lamp_L_symb_num = 11;

@@ -63,7 +63,7 @@
 #define SENS_BTN_PORT (GPIOD)
 //#define ACCELEROMETR_ADDR0 0x30
 #define Animations_amount 3
-#define BOOT_COUNTER_EEPROM_ADDR 0x04004
+#define BOOT_COUNTER_EEPROM_ADDR 0x4004
 #define BRIGHTNESS_EEPROM_ADDR 0x04003
 #define PERIOD_EEPROM_ADDR 0x04002
 #define ANIMATION_EEPROM_ADDR 0x04001
@@ -115,7 +115,7 @@ bool low_bat_indication_blink = FALSE;
 bool sleep_flag = FALSE;
 bool open_animation_is_showing = FALSE;
 bool long_btn_press_occured = FALSE;
-bool time_shoing_started_time_count = FALSE;
+bool time_showing_started_time_count = FALSE;
 bool time_shwing_btn_mode = FALSE;
 bool quick_increment_by_btn_long_press = FALSE;
 bool show_today_step = TRUE;
@@ -150,6 +150,9 @@ uint8_t step_delay = STEP_DELAY;
 uint32_t step_counter_this_day = 0;
 uint32_t step_counter_previous_day = 0;
 uint8_t awu_end_of_day_counter;
+uint8_t day_read0;
+uint8_t day_read1;
+uint8_t day_read2;
 
 uint8_t seg_dot_on_lamp = 0;  // 1 - left lamp 2 - right lamp 3 both lamps
 uint8_t showing_data = 0;     // 0 nothing, 1 time, 2 battary charge, 3 settings, 4 open animation, 5 close animation, 6 error message, 7 step counter
@@ -163,8 +166,10 @@ uint8_t Animation = ANIMATION;        // TO EEPROM byte
 uint16_t Time_showing_duration = TIME_SHOWING_DURATION;
 uint8_t time_showing_duration_level;  // 2000 1400 1000 700 500 400 300 // TO EEPROM byte
 uint8_t brightness = Brightness;      // TO EEPROM byte
-uint8_t brightness_level;             // 1 2 4 8 16 32 64 128 255
-uint8_t boot_counter;                 // TO EEPROM byte
+uint8_t brightness_level;             // [0 ... 9] 1 2 4 8 16 32 64 128 255
+uint8_t boot_counter;                 // TO EEPROM byte              //debug
+//uint8_t rst_reg;                      // rst source                  //debug
+uint8_t step_shift_counter = 0;                                      //debug
 
 volatile uint16_t seg_dot = 0b0000000001000000;
 uint16_t alphabet_iv3_l[] = {
@@ -246,6 +251,7 @@ void Swap_segments(uint8_t seg1, uint8_t seg2);
 void Mix_segments();
 void Show_easy_animation(uint8_t animation, uint8_t frame);
 void Set_sleep_conditions();
+void Clear_I2C();
 //void Awu_end_of_the_day_check_for_reset();
 
 void get_settings_from_eeprom();
@@ -287,6 +293,8 @@ void main(void)
   //!!!!IF CHANGED, CHANGE THE I2C INIT PARAMS!!!!
   //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   /* Clear High speed internal clock prescaler */
+  
+  //rst_reg = RST->SR & 0x1F;
   CLK->CKDIVR &= (uint8_t)(~CLK_CKDIVR_HSIDIV);
   /* Set High speed internal clock prescaler */
   CLK->CKDIVR |= (uint8_t)0x08;                 /*!< High speed internal clock prescaler: 2 */
@@ -345,7 +353,7 @@ void main(void)
   enableInterrupts();
 
 
-  #if BOOT_COUNTER_ENABLE == 1
+  #if BOOT_COUNTER_ENABLE == 1     //debug
   boot_counter = *(PointerAttr uint8_t *) (MemoryAddressCast)BOOT_COUNTER_EEPROM_ADDR;
   boot_counter++;
   /* Unlock data memory */
@@ -356,9 +364,9 @@ void main(void)
   while (!(FLASH->IAPSR & FLASH_IAPSR_DUL));
   *(PointerAttr uint8_t*) (uint16_t)0x4004 = boot_counter;
   /* Lock memory */
-  FLASH->IAPSR &= (uint8_t)0xF7;  /*!< Data EEPROM memory */;
-  
-  #endif
+  FLASH->IAPSR &= (uint8_t)0xF7;  /*!< Data EEPROM memory */
+
+  #endif                           //debug
 
 
   TxBuffer[0] = 0x0C; //halt bit regester address
@@ -458,6 +466,7 @@ void main(void)
   AWU_Cmd(enable_accelerometr | enable_step_counter);
 
   GPIO_WriteHigh(GPIOC, PW_ON);
+  Clear_I2C();
 
   lamp_L_symb_num = 12;   //H
   lamp_R_symb_num = 13;   //I
@@ -466,7 +475,7 @@ void main(void)
   lamp_R_symb_num = 20;   //r
   Delay_ms(700);
   lamp_L_symb_num = 1;    //1.  
-  lamp_R_symb_num = 4;    //4
+  lamp_R_symb_num = 6;    //6
   seg_dot_on_lamp = 1;
   Delay_ms(1300);
   showing_data = 0;
@@ -477,10 +486,10 @@ void main(void)
   {
     if (showing_data == 3)//-------------------SETTINGS-------------------//
     {
-      if (!time_shoing_started_time_count)
+      if (!time_showing_started_time_count)
       {
         settings_showing_started = miliseconds;
-        time_shoing_started_time_count = TRUE;
+        time_showing_started_time_count = TRUE;
 
       }
 
@@ -724,10 +733,10 @@ void main(void)
     //low_bat_indication_blink = FALSE;
     if (showing_data == 2)//-------------------CHARGE-------------------//
     {
-      if (!time_shoing_started_time_count)
+      if (!time_showing_started_time_count)
       {
         time_showing_started = miliseconds;
-        time_shoing_started_time_count = TRUE;
+        time_showing_started_time_count = TRUE;
       }
       uint16_t bat_voltage = 0;
       for (uint8_t j = 0; j < 10; j++)
@@ -763,7 +772,7 @@ void main(void)
       if (miliseconds - time_showing_started >= Charge_showing_duration)               // end of charge showing
         {
           btn_was_pressed = 0;
-          time_shoing_started_time_count = FALSE;
+          time_showing_started_time_count = FALSE;
           // if (enable_step_counter)
           // {
           //   showing_data = 7;
@@ -788,10 +797,10 @@ void main(void)
     if (showing_data == 1)//-------------------TIME-------------------//            
     {
       get_time();
-      if (!time_shoing_started_time_count)
+      if (!time_showing_started_time_count)
       {
         time_showing_started = miliseconds;
-        time_shoing_started_time_count = TRUE;
+        time_showing_started_time_count = TRUE;
       }
       uint16_t already_showing = miliseconds - time_showing_started;
       if (!time_shwing_btn_mode)
@@ -905,7 +914,7 @@ void main(void)
         }
         errno = 0;
       }
-      show_error(2);
+      show_error(2);                  //debug
       if(!error_register)showing_data = 5;
 
       #else
@@ -919,10 +928,10 @@ void main(void)
       //uint8_t ten_step;
       //uint8_t step;
       uint32_t step_to_show;
-      if (!time_shoing_started_time_count)
+      if (!time_showing_started_time_count)
       {
         time_showing_started = miliseconds;
-        time_shoing_started_time_count = TRUE;
+        time_showing_started_time_count = TRUE;
       }
       if (!step_showing_indication_done)
       {
@@ -1095,6 +1104,7 @@ void main(void)
       }
       if (showing_data != 3)
       {
+        btn_was_pressed = 0;
         show_settings_animation();
         showing_data = 3;                  //if long press go to settings
         //settings_mode = TRUE;
@@ -1102,7 +1112,7 @@ void main(void)
         get_time();
       }
       settings_showing_started = miliseconds;
-      time_shoing_started_time_count = FALSE;       //reset time shoing time
+      time_showing_started_time_count = FALSE;       //reset time shoing time
       long_btn_press_occured = FALSE;   //long_btn_press_occured clear flag
     }
   }
@@ -1143,7 +1153,7 @@ INTERRUPT_HANDLER(AWU_IRQHandler, 1)
     if (step_delay)
     {
       step_delay--;
-    }else if ((X_acc[0] - X_acc[4]) /*+ (Y_acc[4] - Y_acc[0])*/ > 15)
+    }else if ((X_acc[0] - X_acc[4]) /*+ (Y_acc[4] - Y_acc[0])*/ > 13)
     {
       step_delay = STEP_DELAY;
       step_counter_this_day++;
@@ -1239,7 +1249,7 @@ INTERRUPT_HANDLER(EXTI_PORTD_IRQHandler, 6)
     }else{
       time_shwing_btn_mode = TRUE;
     }
-    time_shoing_started_time_count = FALSE;       //reset time shoing time
+    time_showing_started_time_count = FALSE;       //reset time shoing time
     btn_was_pressed = 1;
   }
   
@@ -1252,7 +1262,7 @@ INTERRUPT_HANDLER(EXTI_PORTD_IRQHandler, 6)
       time_shwing_btn_mode = TRUE;
       //time_shoing_started_time_count = FALSE;       //reset time shoing time
     }
-    time_shoing_started_time_count = FALSE;       //reset time shoing time
+    time_showing_started_time_count = FALSE;       //reset time shoing time
     btn_was_pressed = 2;
   }
   
@@ -1394,21 +1404,42 @@ void get_time(){
   // ten_hours = 1;
 
   //todo remove halt bit before time reading // done in wake-up sequence
+  day_read2 = day_read1;
+  day_read1 = day_read0;
 
-uint8_t old_day = day;
+  uint8_t old_day = day;
+  //uint8_t time_errors = 0;
+  //uint8_t i = 0;
+
   #if RTC >= 1
+  //do{
+    
+    // if (time_errors)
+    // {
+      
+    // }
+    // time_errors = 0;
+    I2C_Read_three_more_byte(RTC_ADDR, 5, RxBuffer, 0);
+    seconds = RxBuffer[1] & 0x0F;
+    ten_seconds = (RxBuffer[1] >> 4) & 0x07;
+    minutes = RxBuffer[2] & 0x0F;
+    ten_minutes = RxBuffer[2] >> 4;
+    hours = RxBuffer[3] & 0x0F;
+    ten_hours = (RxBuffer[3] >> 4) & 0x03;
+    day_read0 = RxBuffer[4] & 0x07;
+    actual_RTC_milliceconds = (RxBuffer[0] >> 4) * 100 + (RxBuffer[0] & 0x0F) * 10;//miliseconds % 1000 / 100;
+    
+    // time_errors += Check_time_errors(seconds);
+    // time_errors += Check_time_errors(ten_seconds);
+    // time_errors += Check_time_errors(minutes);
+    // time_errors += Check_time_errors(ten_minutes);
+    // time_errors += Check_time_errors(hours);
+    // time_errors += Check_time_errors(ten_seconds);
+    //if (i > 5) break;   //5 attempts to fic i2c bus
+    //i++;
+  //} while (!time_errors);
 
-  I2C_Read_three_more_byte(RTC_ADDR, 5, RxBuffer, 0);
-  seconds = RxBuffer[1] & 0x0F;
-  ten_seconds = (RxBuffer[1] >> 4) & 0x07;
-  minutes = RxBuffer[2] & 0x0F;
-  ten_minutes = RxBuffer[2] >> 4;
-  hours = RxBuffer[3] & 0x0F;
-  ten_hours = (RxBuffer[3] >> 4) & 0x03;
-  day = RxBuffer[4] & 0x03;
-  actual_RTC_milliceconds = (RxBuffer[0] >> 4) * 100 + (RxBuffer[0] & 0x0F) * 10;//miliseconds % 1000 / 100;
-  
-  #else
+    #else
 
   I2C_Read_three_more_byte(RTC_ADDR, 4, RxBuffer, 0);
   seconds = RxBuffer[0] & 0x0F;
@@ -1417,7 +1448,7 @@ uint8_t old_day = day;
   ten_minutes = (RxBuffer[1] >> 4) & 0x07;
   hours = RxBuffer[2] & 0x0F;
   ten_hours = (RxBuffer[2] >> 4) & 0x03;
-  day = RxBuffer[3] & 0x03;
+  day_read0 = RxBuffer[3] & 0x07;
   actual_RTC_milliceconds = miliseconds % 1000 / 100;
   #endif
 
@@ -1428,12 +1459,19 @@ uint8_t old_day = day;
   //avoiding multiple reset  
   //if(awu_end_of_day_counter > awu_counter_old) awu_reset_allow = TRUE;
   //awu_reset_allow = FALSE;
-  if (day != old_day){
-    //awu_reset_allow = TRUE;
-    step_counter_previous_day = step_counter_this_day;
-    step_counter_this_day = 0;
-    //awu_reset_allow = FALSE; 
+  if (day_read0 == day_read1 && day_read1 == day_read2)
+  {
+    day = day_read1;
+    if (day != old_day & day != 0 & old_day != 0){
+      //awu_reset_allow = TRUE;
+      step_shift_counter++;
+      step_counter_previous_day = step_counter_this_day;
+      step_counter_this_day = 0;
+      //awu_reset_allow = FALSE; 
+    }
   }
+  
+  
   //else{awu_reset_allow = FALSE;}
   
   // if (awu_reset_allow)
@@ -1657,26 +1695,29 @@ void set_settings_to_eeprom(){
 
 #if (RTC == 2)
 void show_error(uint8_t error){
+  uint8_t boot_nounter_temp = boot_counter % 100;       //debug
   seg_dot_on_lamp = 0;
   for (uint8_t j = 0; j < 4; j++)
   {
-    lamp_L_symb_num = 13;
-    lamp_R_symb_num = 6;
+    lamp_L_symb_num = 13;   //Р
+    lamp_R_symb_num = 6;    //Б (6)
     if (error == 2)
     {
-      lamp_L_symb_num = boot_counter / 10;
-      lamp_R_symb_num = boot_counter % 10;//&0x0F;
+      lamp_L_symb_num = boot_nounter_temp / 10;         //debug
+      lamp_R_symb_num = boot_nounter_temp % 10;//&0x0F; //debug
     }
     Delay_ms(200);
-    lamp_L_symb_num = 11;
-    lamp_R_symb_num = 11;
-    Delay_ms(200);
+    seg_dot_on_lamp = 2;                                //debug
+    lamp_L_symb_num = step_shift_counter / 10;          //debug
+    lamp_R_symb_num = step_shift_counter % 10;          //debug
+    Delay_ms(200);                                      //debug
+    seg_dot_on_lamp = 0;                                //debug
   }
 }
 #endif
 
 void Set_sleep_conditions(){
-  time_shoing_started_time_count = FALSE;
+  time_showing_started_time_count = FALSE;
   showing_data = 5;
 }
 
@@ -1728,6 +1769,19 @@ void Mix_segments(){
   // temp = awu_end_of_day_counter % 100;
   // Swap_segments(7, temp / 10);
   // Swap_segments(8, temp % 10);
+}
+
+void Clear_I2C(){
+  GPIO_WriteHigh(GPIOB, GPIO_PIN_5);    //SDA HIGH
+  for (uint8_t i = 0; i < 9; i++)
+  {
+    GPIO_WriteHigh(GPIOB, GPIO_PIN_4);  //SCL HIGH
+    Delay(20);
+    GPIO_WriteLow(GPIOB, GPIO_PIN_4);  //SCL LOW
+    Delay(20);
+  }
+  GPIO_WriteHigh(GPIOB, GPIO_PIN_4);  //SCL HIGH
+  I2C_GenerateSTOP(ENABLE);
 }
 
 void Delay_ms(uint32_t delay)

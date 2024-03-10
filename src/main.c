@@ -92,6 +92,7 @@
 #define Enable_accelerometr 1
 #define Long_btn_press 1000             // ms
 #define TimErr 1000
+#define QUICK_INCREMENT_PERIOD 250      //ms
 
 /* Private macro -------------------------------------------------------------*/
 /* Private variables ---------------------------------------------------------*/
@@ -368,6 +369,7 @@ void main(void)
 
   #endif                           //debug
 
+  Clear_I2C();
 
   TxBuffer[0] = 0x0C; //halt bit regester address
   TxBuffer[1] = 0;
@@ -407,7 +409,6 @@ void main(void)
   I2C_Send_data(RTC_ADDR, 2, TxBuffer);
   #endif
 
-
   I2C_Read_three_more_byte(RTC_ADDR, 8, RxBuffer, 0);
   #if RTC >= 1
   if (RxBuffer[1] & 0x80)
@@ -425,14 +426,14 @@ void main(void)
     TxBuffer[1] = RxBuffer[0] & ~0x80;  
     I2C_Send_data(RTC_ADDR, 2, TxBuffer);
     #endif 
-
   }
+
+  //I2C_Read_three_more_byte(RTC_ADDR, 8, RxBuffer, 0); //FIXME do not work with Clear_I2C may be Clear_I2C is a bit incorrect
   #if RTC >= 1
-  if ((RxBuffer[2] >> 4) > 5 || (RxBuffer[2] & 0x0F) > 9 || (RxBuffer[3] & 0x0F) > 9 || (RxBuffer[3] >> 4) > 2)
+  if ((RxBuffer[2] >> 4) > 5 || (uint8_t)(RxBuffer[2] & 0x0F) > 0x09 || (uint8_t)(RxBuffer[3] & 0x0F) > 0x09 || (uint8_t)((RxBuffer[3] >> 4) & 3) > 2){
   #else
-  if ((RxBuffer[1] >> 4) > 5 || (RxBuffer[1] & 0x0F) > 9 || (RxBuffer[2] & 0x0F) > 9 || (RxBuffer[2] >> 4) > 2)
+  if ((RxBuffer[1] >> 4) > 5 || (RxBuffer[1] & 0x0F) > 9 || (RxBuffer[2] & 0x0F) > 9 || (RxBuffer[2] >> 4) & 3 > 2)
   #endif
-  {
     TxBuffer[0] = 0x00;
     TxBuffer[1] = 0x00; 
     TxBuffer[2] = 0x00; 
@@ -444,11 +445,11 @@ void main(void)
     I2C_Send_data(RTC_ADDR, 8, TxBuffer);
   }
 
-
   #if CALIBRATION_MODE == 0
 
   //accelerometr init
-  I2C_Read_three_more_byte(ACCELEROMETR_ADDR1, 1, RxBuffer, 0x9E);
+  Delay_ms(5);        //LIS3DH docs' recomended delay
+  I2C_Read_three_more_byte(ACCELEROMETR_ADDR1, 1, RxBuffer, 0x8F);  //read WHO_AM_I must be equal to 0b00110011
   TxBuffer[0] = 0x9E; //CTRL_REG0 addr |= 0x80 in order to enable multiple reg transfer
   TxBuffer[1] = 0x10; //CTRL_REG0       pull-up connected to SDO/SA0 pin (Default value: 00010000)
   TxBuffer[2] = 0x00; //TEMP_CFG_REG    T disabled, ADC disabled
@@ -466,7 +467,7 @@ void main(void)
   AWU_Cmd(enable_accelerometr | enable_step_counter);
 
   GPIO_WriteHigh(GPIOC, PW_ON);
-  Clear_I2C();
+  //Clear_I2C();
 
   lamp_L_symb_num = 12;   //H
   lamp_R_symb_num = 13;   //I
@@ -749,43 +750,51 @@ void main(void)
       }
       lamp_L_symb_num = 18;       //  "A"
       seg_dot_on_lamp = 0;
-      if (bat_voltage <= 5200)
+      if (bat_voltage <= 5200)                        // <= 25%
       {
         lamp_R_symb_num = 16;
         low_bat_indication_blink = TRUE;
       }
-      if (bat_voltage > 5201 & bat_voltage <= 5500)
+      if (bat_voltage > 5201 & bat_voltage <= 5500)   // 25% > ch >= 50%
       {
         lamp_R_symb_num = 16;
         low_bat_indication_blink = FALSE;
       }
-      if (bat_voltage > 5501 & bat_voltage <= 5950)
+      if (bat_voltage > 5501 & bat_voltage <= 5850)   // 50% > ch >= 75%
       {
         lamp_R_symb_num = 15;
         low_bat_indication_blink = FALSE;
       }
-      if (bat_voltage > 5951)
+      if (bat_voltage > 5851)                        // > 75%
       {
         lamp_R_symb_num = 14;
         low_bat_indication_blink = FALSE;
       }
       if (miliseconds - time_showing_started >= Charge_showing_duration)               // end of charge showing
+      {
+        btn_was_pressed = 0;
+        time_showing_started_time_count = FALSE;
+        // if (enable_step_counter)
+        // {
+        //   showing_data = 7;
+        // }else{
+        if (error_register)
+        {
+          showing_data = 6;
+        }else
+        {
+          showing_data = 5;
+        }
+        // }
+      } else {
+        if (btn_was_pressed == 1 && enable_step_counter)
         {
           btn_was_pressed = 0;
           time_showing_started_time_count = FALSE;
-          // if (enable_step_counter)
-          // {
-          //   showing_data = 7;
-          // }else{
-          if (error_register)
-          {
-            showing_data = 6;
-          }else
-          {
-            showing_data = 5;
-          }
-          // }
+          step_showing_indication_done = FALSE;
+          showing_data = 7;     //show steps
         }
+      }
     }
     
     if(miliseconds % 400 > 200){
@@ -855,23 +864,22 @@ void main(void)
           //showing_data = 5;
           Set_sleep_conditions();
         }
-      }else
-      {
-        if (btn_was_pressed == 1 && miliseconds - time_showing_started < 3 * Time_showing_duration)         // showing hours
+      } else {
+        if (miliseconds - time_showing_started < 3 * Time_showing_duration)
         {
-          lamp_R_symb_num = hours;
-          lamp_L_symb_num = ten_hours;
-          seg_dot_on_lamp = 2;
-        }
-
-        if (btn_was_pressed == 2 && miliseconds - time_showing_started < 3 * Time_showing_duration)        // showing minutes
-        {
-          lamp_R_symb_num = minutes;
-          lamp_L_symb_num = ten_minutes;
-          seg_dot_on_lamp = 1;
-        }
-        if (miliseconds - time_showing_started >= 3 * Time_showing_duration)                               // end of time showing
-        {
+          if (btn_was_pressed == 1)                                                         // showing hours
+          {
+            lamp_R_symb_num = hours;
+            lamp_L_symb_num = ten_hours;
+            seg_dot_on_lamp = 2;
+          }
+          if (btn_was_pressed == 2)                                                         // showing minutes
+          {
+            lamp_R_symb_num = minutes;
+            lamp_L_symb_num = ten_minutes;
+            seg_dot_on_lamp = 1;
+          }
+        } else {  //if (miliseconds - time_showing_started >= 3 * Time_showing_duration)    // end of time showing
           btn_was_pressed = 0;
           seg_dot_on_lamp = 0;
           //time_shoing_started_time_count = FALSE;
@@ -895,19 +903,21 @@ void main(void)
     {
       #if (RTC == 2)
 
-      uint8_t errno;
+      uint8_t errno = 0;
       for (uint8_t i = 0b10000000; i != 0; i = i >> 1){
         if ((error_register & i) == 0x10)
         {
           error_register &= ~i;  //removing error
           errno = 1;     
-        }
-        if ((error_register & i) == 0x04)
+        } else if ((error_register & i) == 0x04)
         {
           error_register &= ~i;  //removing error
           //errno = 2; 
           //errors_count++;
-        } 
+        } else 
+        {
+          error_register &= ~i;
+        }
         if (errno)
         {
           show_error(errno);
@@ -944,6 +954,12 @@ void main(void)
         {
           btn_was_pressed = 0;
           show_today_step = !show_today_step;
+        }
+        if (btn_was_pressed == 2)
+        {
+          btn_was_pressed = 0;
+          time_showing_started_time_count = FALSE;
+          showing_data = 2;     //show charge
         }
         
         //seg_dot_on_lamp = 0;
@@ -1235,7 +1251,7 @@ INTERRUPT_HANDLER(EXTI_PORTD_IRQHandler, 6)
 
   if (!GPIO_ReadInputPin(SENS_BTN_PORT, BTN1_M))
   {
-    if (btn_was_pressed == 1 && showing_data == 1)   //if this btn was already pressed switching to showing charge
+    if (btn_was_pressed == 1 && showing_data == 1)   //if this btn was already pressed, switching to showing steps
     {
       if (enable_step_counter)  //if step counter enabled dabl tap on this btn activates showing steps
       {
@@ -1255,7 +1271,7 @@ INTERRUPT_HANDLER(EXTI_PORTD_IRQHandler, 6)
   
   if (!GPIO_ReadInputPin(SENS_BTN_PORT, BTN2_H))
   {
-    if (btn_was_pressed == 2 && showing_data == 1)   //if this btn was already pressed switching to showing charge
+    if (btn_was_pressed == 2 && showing_data == 1)   //if this btn was already pressed, switching to showing charge
     {
       showing_data = 2;
     }else{
@@ -1306,7 +1322,7 @@ INTERRUPT_HANDLER(TIM2_UPD_OVF_BRK_IRQHandler, 13)
   }
   if (quick_increment_by_btn_long_press)
   {
-    if (!GPIO_ReadInputPin(SENS_BTN_PORT, BTN1_M) && miliseconds % 400 == 0)//if btn still bressed
+    if (!GPIO_ReadInputPin(SENS_BTN_PORT, BTN1_M) && miliseconds % QUICK_INCREMENT_PERIOD == 0)//if btn still bressed
     {
       btn_was_pressed = 1;
     }
@@ -1695,7 +1711,7 @@ void set_settings_to_eeprom(){
 
 #if (RTC == 2)
 void show_error(uint8_t error){
-  uint8_t boot_nounter_temp = boot_counter % 100;       //debug
+  uint8_t boot_counter_temp = boot_counter % 100;       //debug
   seg_dot_on_lamp = 0;
   for (uint8_t j = 0; j < 4; j++)
   {
@@ -1703,8 +1719,8 @@ void show_error(uint8_t error){
     lamp_R_symb_num = 6;    //Б (6)
     if (error == 2)
     {
-      lamp_L_symb_num = boot_nounter_temp / 10;         //debug
-      lamp_R_symb_num = boot_nounter_temp % 10;//&0x0F; //debug
+      lamp_L_symb_num = boot_counter_temp / 10;         //debug
+      lamp_R_symb_num = boot_counter_temp % 10;//&0x0F; //debug
     }
     Delay_ms(200);
     seg_dot_on_lamp = 2;                                //debug
@@ -1772,6 +1788,7 @@ void Mix_segments(){
 }
 
 void Clear_I2C(){
+  I2C_DeInit();
   GPIO_WriteHigh(GPIOB, GPIO_PIN_5);    //SDA HIGH
   for (uint8_t i = 0; i < 9; i++)
   {
@@ -1781,7 +1798,13 @@ void Clear_I2C(){
     Delay(20);
   }
   GPIO_WriteHigh(GPIOB, GPIO_PIN_4);  //SCL HIGH
+  Delay(40);
   I2C_GenerateSTOP(ENABLE);
+  Delay(40);
+  I2C_SoftwareResetCmd(ENABLE);
+  I2C_SoftwareResetCmd(DISABLE);
+  I2C_Init(/*4,*/I2C_ACK_CURR,8);
+  Delay(40);
 }
 
 void Delay_ms(uint32_t delay)
